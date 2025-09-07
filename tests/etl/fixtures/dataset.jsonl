@@ -1,0 +1,10 @@
+{"id": 0, "text": "I love this product! It's amazing.", "sentiment": "positive"}
+{"id": 1, "text": "This is the worst experience I've ever had.", "sentiment": "negative"}
+{"id": 2, "text": "I'm very happy with the service.", "sentiment": "positive"}
+{"id": 3, "text": "I hate this so much.", "sentiment": "negative"}
+{"id": 4, "text": "It's okay, not great but not terrible either.", "sentiment": "neutral"}
+{"id": 5, "text": "Absolutely fantastic! Highly recommend.", "sentiment": "positive"}
+{"id": 6, "text": "Terrible, would not buy again.", "sentiment": "negative"}
+{"id": 7, "text": "I'm satisfied with my purchase.", "sentiment": "positive"}
+{"id": 8, "text": "This is not what I expected.", "sentiment": "negative"}
+{"id": 9, "text": "Exceeded my expectations!", "sentiment": "positive"}

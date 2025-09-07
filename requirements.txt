@@ -1,0 +1,11 @@
+classconfig~=1.0.10
+torch
+transformers~=4.48.0
+accelerate~=1.3.0
+bitsandbytes~=0.46.1
+datasets
+evaluate
+numpy   # there were some issues with newer versions
+scikit-learn
+jinja2
+torch-scatter~=2.1.2
