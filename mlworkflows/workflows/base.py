@@ -2,9 +2,8 @@ import json
 import random
 from abc import ABC, abstractmethod
 from pathlib import Path
-from typing import Optional, Union, Dict, Any, Generator
+from typing import Optional, Union, Any, Generator
 
-import torch
 import transformers
 from classconfig import ConfigurableFactory, Config, ConfigurableSubclassFactory, ConfigurableMixin, ConfigurableValue, \
     RelativePathTransformer
@@ -13,16 +12,15 @@ from classconfig.transforms import TryTransforms
 from classconfig.validators import BoolValidator, ValueInIntervalIntegerValidator, \
     ValueInIntervalFloatValidator, AnyValidator, StringValidator, IsNoneValidator
 from datasets import DatasetDict
-from transformers import AutoTokenizer, Trainer, DefaultDataCollator, \
-    TrainingArguments as HFTrainingArguments, EarlyStoppingCallback
-from transformers.trainer_utils import PredictionOutput
-
 from mlworkflows.etl.dataset import DatasetFactory
 from mlworkflows.etl.tokenizer import TokenizerFactory
 from mlworkflows.eval.compute_metrics import ComputeMetrics
 from mlworkflows.models.hf_base import HFModelFactory
 from mlworkflows.training_utils.optimizer_factory import OptimizerFactory, LionFactory
 from mlworkflows.utils.modules import load_module
+from transformers import AutoTokenizer, Trainer, DefaultDataCollator, \
+    TrainingArguments as HFTrainingArguments, EarlyStoppingCallback, TrainerCallback
+from transformers.trainer_utils import PredictionOutput
 
 transformers.logging.set_verbosity_info()
 
@@ -100,6 +98,12 @@ class TrainingArguments(HFTrainingArguments, ConfigurableDataclassMixin):
         user_default=42,
         transform=lambda x: random.randint(0, 2**31 - 1) if x is None else x,
     )
+
+
+class RuntimeFlopsLoggingCallback(TrainerCallback):
+    def on_log(self, args, state, control, logs=None, **kwargs):
+        if state.is_world_process_zero and logs is not None:
+            logs["total_flos"] = state.total_flos
 
 
 class BaseTrainingWorkflow(ConfigurableMixin):
@@ -204,6 +208,8 @@ class BaseTrainingWorkflow(ConfigurableMixin):
             data_collator=self.collator,
             **add_args
         )
+        # this is rather dirty, but it seems like there is no other way to log flops
+        trainer.callback_handler.callbacks = [RuntimeFlopsLoggingCallback()] + trainer.callback_handler.callbacks
         return trainer
 
     def _init_components(self):

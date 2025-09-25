@@ -3,13 +3,11 @@ from dataclasses import dataclass
 from typing import List, Optional, Union, Iterable
 
 import numpy
-import torch
-from transformers import PreTrainedTokenizerBase
-from transformers.data.data_collator import DataCollatorMixin, DataCollatorWithPadding
-from transformers.utils import PaddingStrategy
-
 from mlworkflows.etl.batches import StructIndicesFactory
 from mlworkflows.etl.transform import masked_language_modeling_masks, mlm_transform
+from transformers import PreTrainedTokenizerBase
+from transformers.data.data_collator import DataCollatorMixin, DataCollatorWithPadding, DataCollatorWithFlattening
+from transformers.utils import PaddingStrategy
 
 
 @dataclass
@@ -106,7 +104,7 @@ class StructDataCollatorForTokenClassification(BatchIndexedDataCollatorForTokenC
 
 
 @dataclass
-class MaskedLanguageModelingDataCollator(DataCollatorWithPadding, DataCollatorMixin):
+class MaskedLanguageModelingDataCollator(DataCollatorWithPadding):
     """
     Data collator for masked language modeling.
     """
@@ -161,8 +159,8 @@ class MaskedLanguageModelingDataCollator(DataCollatorWithPadding, DataCollatorMi
 
         self.unselectable_token_id = tokenizer.pad_token_id if do_not_select_pad else None
 
-    def torch_call(self, features):
-        features = super()(features)
+    def __call__(self, features):
+        features = super().__call__(features)
         mlm_transform(
             features=features,
             selection_prob=self.selection_prob,
@@ -174,6 +172,58 @@ class MaskedLanguageModelingDataCollator(DataCollatorWithPadding, DataCollatorMi
             span_sep_token=self.span_sep_token,
             ignore=self.ignore,
             unselectable_token_id=self.unselectable_token_id
+        )
+
+        return features
+
+
+@dataclass
+class MaskedLanguageModelingFlatteningDataCollator(DataCollatorWithFlattening):
+    """
+    Data collator for masked language modeling using flattened inputs.
+    """
+
+    def __init__(self, tokenizer: PreTrainedTokenizerBase,
+                 selection_prob: float = 0.1,
+                 span_selection_prob: float = 0.0, masking_prob: float = 0.8, random_prob: float = 0.1,
+                 ignore: int = -100, span_sep_token: Optional[int] = None):
+        """
+        :param tokenizer: Tokenizer that will be to decode the input to obtain the gt sequence.
+        :param selection_prob: Probability that given token will be selected for masked language modeling.
+        :param span_selection_prob: Probability that given span will be selected for masked language modeling.
+            It will select a token with id `span_sep_token` with this probability and then it will select
+            all tokens between this token and the next `span_sep_token` token or the end of the sequence.
+            You must set `span_sep_token` if you want to use this feature.
+        :param masking_prob: Probability that selected token will be replaced with MASK token.
+        :param random_prob: Probability that selected token will be replaced with random token.
+        :param ignore: ignore label
+        :param span_sep_token: token that will be used to separate spans
+        :raises ValueError: If `span_selection_prob` is greater than 0.0 and `span_sep_token` is None.
+        """
+        super().__init__()
+        self.tokenizer = tokenizer
+        self.selection_prob = selection_prob
+        self.span_selection_prob = span_selection_prob
+        self.masking_prob = masking_prob
+        self.random_prob = random_prob
+        self.ignore = ignore
+        self.span_sep_token = span_sep_token
+
+        if span_selection_prob > 0.0 and span_sep_token is None:
+            raise ValueError("You must set `span_sep_token` if you want to use `span_selection_prob`.")
+
+    def __call__(self, features):
+        features = super().__call__(features)
+        mlm_transform(
+            features=features,
+            selection_prob=self.selection_prob,
+            span_selection_prob=self.span_selection_prob,
+            masking_prob=self.masking_prob,
+            random_prob=self.random_prob,
+            vocab_size=self.tokenizer.vocab_size,
+            mask_token_id=self.tokenizer.mask_token_id,
+            span_sep_token=self.span_sep_token,
+            ignore=self.ignore
         )
 
         return features

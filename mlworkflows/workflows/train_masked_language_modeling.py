@@ -5,7 +5,8 @@ from classconfig import ConfigurableValue, ConfigurableSubclassFactory
 from classconfig.validators import AnyValidator, IsNoneValidator, \
     ValueInIntervalFloatValidator, ValueInIntervalIntegerValidator
 
-from mlworkflows.etl.collators import StructMaskedLanguageModelingDataCollator, MaskedLanguageModelingDataCollator
+from mlworkflows.etl.collators import StructMaskedLanguageModelingDataCollator, MaskedLanguageModelingDataCollator, \
+    MaskedLanguageModelingFlatteningDataCollator
 from mlworkflows.models.masked_language_modeling import MaskedLanguageModelFactory
 from mlworkflows.workflows.base import BaseTrainingWorkflow
 
@@ -22,6 +23,11 @@ class MaskedLanguageModelingTrainingWorkflow(BaseTrainingWorkflow):
 
     struct_batch: bool = ConfigurableValue(
         desc="Whether to use batching into one vector with struct indices. For evaluation set inputs in include_for_metrics.",
+        user_default=False,
+        voluntary=True
+    )
+    flattened_batch: bool = ConfigurableValue(
+        desc="Whether to use flattened batching into one vector without struct indices.",
         user_default=False,
         voluntary=True
     )
@@ -62,7 +68,6 @@ class MaskedLanguageModelingTrainingWorkflow(BaseTrainingWorkflow):
 
     def _init_collator(self):
         if self.struct_batch:
-
             if not hasattr(self.model.config, "levels"):
                 raise ValueError("Model config does not have 'levels' attribute. "
                                  "Please set 'struct_batch' to False or use a model with 'levels' attribute.")
@@ -77,6 +82,16 @@ class MaskedLanguageModelingTrainingWorkflow(BaseTrainingWorkflow):
                 span_sep_token=self.span_sep_token,
                 ignore=-100,
                 make_matrix_compatible=True)
+        elif self.flattened_batch:
+            self.collator = MaskedLanguageModelingFlatteningDataCollator(
+                tokenizer=self.tokenizer,
+                selection_prob=self.selection_prob,
+                span_selection_prob=self.span_selection_prob,
+                masking_prob=self.masking_prob,
+                random_prob=self.random_prob,
+                span_sep_token=self.span_sep_token,
+                ignore=-100
+            )
         else:
             self.collator = MaskedLanguageModelingDataCollator(
                 tokenizer=self.tokenizer,
