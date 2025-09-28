@@ -49,6 +49,18 @@ class MaskedLanguageModelingTrainingWorkflow(BaseTrainingWorkflow):
                                                           user_default=None, voluntary=True,
                                                           validator=AnyValidator(
                                                               [IsNoneValidator(), ValueInIntervalIntegerValidator(min_value=0)]))
+    warmup_masked_lm_steps: int = ConfigurableValue(
+        "Number of warmup steps for masked language modeling. It will linearly increase the selection_prob from 0 to the value of "
+        "selection_prob parameter.",
+        user_default=0, voluntary=True,
+        validator=ValueInIntervalIntegerValidator(min_value=0)
+    )
+    min_warmup_selection_prob: float = ConfigurableValue(
+        "Minimum selection probability during warmup. It will linearly increase the selection_prob from this value to the value of "
+        "selection_prob parameter.",
+        user_default=0.0, voluntary=True,
+        validator=ValueInIntervalFloatValidator(min_value=0.0, max_value=1.0)
+    )
 
     def __post_init__(self):
         self.input_template = None
@@ -80,6 +92,9 @@ class MaskedLanguageModelingTrainingWorkflow(BaseTrainingWorkflow):
                 random_prob=self.random_prob,
                 span_selection_prob=self.span_selection_prob,
                 span_sep_token=self.span_sep_token,
+                warmup_masked_lm_steps=self.warmup_masked_lm_steps,
+                min_warmup_selection_prob=self.min_warmup_selection_prob,
+                get_steps=lambda: self.trainer.state.global_step,
                 ignore=-100,
                 make_matrix_compatible=True)
         elif self.flattened_batch:
@@ -90,6 +105,9 @@ class MaskedLanguageModelingTrainingWorkflow(BaseTrainingWorkflow):
                 masking_prob=self.masking_prob,
                 random_prob=self.random_prob,
                 span_sep_token=self.span_sep_token,
+                warmup_masked_lm_steps=self.warmup_masked_lm_steps,
+                min_warmup_selection_prob=self.min_warmup_selection_prob,
+                get_steps=lambda: self.trainer.state.global_step,
                 ignore=-100
             )
         else:
@@ -102,6 +120,9 @@ class MaskedLanguageModelingTrainingWorkflow(BaseTrainingWorkflow):
                 random_prob=self.random_prob,
                 span_selection_prob=self.span_selection_prob,
                 span_sep_token=self.span_sep_token,
+                warmup_masked_lm_steps=self.warmup_masked_lm_steps,
+                min_warmup_selection_prob=self.min_warmup_selection_prob,
+                get_steps=lambda: self.trainer.state.global_step,
                 ignore=-100,
                 do_not_select_pad=True,
             )

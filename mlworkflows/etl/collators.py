@@ -1,6 +1,6 @@
 import itertools
 from dataclasses import dataclass
-from typing import List, Optional, Union, Iterable
+from typing import List, Optional, Union, Iterable, Callable
 
 import numpy
 from mlworkflows.etl.batches import StructIndicesFactory
@@ -115,6 +115,9 @@ class MaskedLanguageModelingDataCollator(DataCollatorWithPadding):
                  pad_to_multiple_of: Optional[int] = None,
                  selection_prob: float = 0.1,
                  span_selection_prob: float = 0.0, masking_prob: float = 0.8, random_prob: float = 0.1,
+                 warmup_masked_lm_steps: int = 0,
+                 min_warmup_selection_prob: float = 0.0,
+                 get_steps: Optional[Callable[[], int]] = None,
                  ignore: int = -100, span_sep_token: Optional[int] = None,
                  do_not_select_pad: bool = True):
         """
@@ -139,6 +142,13 @@ class MaskedLanguageModelingDataCollator(DataCollatorWithPadding):
             You must set `span_sep_token` if you want to use this feature.
         :param masking_prob: Probability that selected token will be replaced with MASK token.
         :param random_prob: Probability that selected token will be replaced with random token.
+        :param warmup_masked_lm_steps: Number of warmup steps for masked language modeling. It will linearly
+            increase the selection_prob from 0 to the value of selection_prob parameter.
+            You must provide `get_steps` function if you want to use this feature.
+        :param min_warmup_selection_prob: Minimum selection probability during warmup. It will linearly increase
+            the selection_prob from this value to the value of selection_prob parameter.
+        :param get_steps: Function that returns the current number of training steps. If provided then
+            it will be used to compute the current selection_prob during warmup.
         :param ignore: ignore label
         :param span_sep_token: token that will be used to separate spans
         :param do_not_select_pad: If True then [PAD] tokens will not be selected for masking.
@@ -153,6 +163,9 @@ class MaskedLanguageModelingDataCollator(DataCollatorWithPadding):
         self.ignore = ignore
         self.span_sep_token = span_sep_token
         self.do_not_select_pad = do_not_select_pad
+        self.warmup_masked_lm_steps = warmup_masked_lm_steps
+        self.min_warmup_selection_prob = min_warmup_selection_prob
+        self.get_steps = get_steps
 
         if span_selection_prob > 0.0 and span_sep_token is None:
             raise ValueError("You must set `span_sep_token` if you want to use `span_selection_prob`.")
@@ -161,9 +174,16 @@ class MaskedLanguageModelingDataCollator(DataCollatorWithPadding):
 
     def __call__(self, features):
         features = super().__call__(features)
+
+        current_selection_prob = self.selection_prob
+        if self.warmup_masked_lm_steps > 0 and self.get_steps is not None:
+            current_step = self.get_steps()
+            current_selection_prob = min(self.selection_prob,
+                                            self.min_warmup_selection_prob + (self.selection_prob - self.min_warmup_selection_prob) *
+                                            current_step / self.warmup_masked_lm_steps)
         mlm_transform(
             features=features,
-            selection_prob=self.selection_prob,
+            selection_prob=current_selection_prob,
             span_selection_prob=self.span_selection_prob,
             masking_prob=self.masking_prob,
             random_prob=self.random_prob,
@@ -186,6 +206,9 @@ class MaskedLanguageModelingFlatteningDataCollator(DataCollatorWithFlattening):
     def __init__(self, tokenizer: PreTrainedTokenizerBase,
                  selection_prob: float = 0.1,
                  span_selection_prob: float = 0.0, masking_prob: float = 0.8, random_prob: float = 0.1,
+                 warmup_masked_lm_steps: int = 0,
+                 min_warmup_selection_prob: float = 0.0,
+                 get_steps: Optional[Callable[[], int]] = None,
                  ignore: int = -100, span_sep_token: Optional[int] = None):
         """
         :param tokenizer: Tokenizer that will be to decode the input to obtain the gt sequence.
@@ -196,6 +219,13 @@ class MaskedLanguageModelingFlatteningDataCollator(DataCollatorWithFlattening):
             You must set `span_sep_token` if you want to use this feature.
         :param masking_prob: Probability that selected token will be replaced with MASK token.
         :param random_prob: Probability that selected token will be replaced with random token.
+        :param warmup_masked_lm_steps: Number of warmup steps for masked language modeling. It will linearly
+            increase the selection_prob from 0 to the value of selection_prob parameter.
+            You must provide `get_steps` function if you want to use this feature.
+        :param min_warmup_selection_prob: Minimum selection probability during warmup. It will linearly increase
+            the selection_prob from this value to the value of selection_prob parameter.
+        :param get_steps: Function that returns the current number of training steps. If provided then it will
+            be used to compute the current selection_prob during warmup.
         :param ignore: ignore label
         :param span_sep_token: token that will be used to separate spans
         :raises ValueError: If `span_selection_prob` is greater than 0.0 and `span_sep_token` is None.
@@ -208,15 +238,25 @@ class MaskedLanguageModelingFlatteningDataCollator(DataCollatorWithFlattening):
         self.random_prob = random_prob
         self.ignore = ignore
         self.span_sep_token = span_sep_token
+        self.warmup_masked_lm_steps = warmup_masked_lm_steps
+        self.min_warmup_selection_prob = min_warmup_selection_prob
+        self.get_steps = get_steps
 
         if span_selection_prob > 0.0 and span_sep_token is None:
             raise ValueError("You must set `span_sep_token` if you want to use `span_selection_prob`.")
 
     def __call__(self, features):
         features = super().__call__(features)
+
+        current_selection_prob = self.selection_prob
+        if self.warmup_masked_lm_steps > 0 and self.get_steps is not None:
+            current_step = self.get_steps()
+            current_selection_prob = min(self.selection_prob,
+                                            self.min_warmup_selection_prob + (self.selection_prob - self.min_warmup_selection_prob) *
+                                            current_step / self.warmup_masked_lm_steps)
         mlm_transform(
             features=features,
-            selection_prob=self.selection_prob,
+            selection_prob=current_selection_prob,
             span_selection_prob=self.span_selection_prob,
             masking_prob=self.masking_prob,
             random_prob=self.random_prob,
@@ -237,6 +277,9 @@ class StructMaskedLanguageModelingDataCollator(BatchIndexedDataCollatorForTokenC
     def __init__(self, tokenizer: PreTrainedTokenizerBase, levels: List[int], pursuit_minimal_context: bool = False,
                  make_matrix_compatible: bool = False, selection_prob: float = 0.1,
                  span_selection_prob: float = 0.0, masking_prob: float = 0.8, random_prob: float = 0.1,
+                 warmup_masked_lm_steps: int = 0,
+                 min_warmup_selection_prob: float = 0.0,
+                 get_steps: Optional[Callable[[], int]] = None,
                  ignore: int = -100, span_sep_token: Optional[int] = None):
         """
         :param tokenizer: Tokenizer that will be to decode the input to obtain the gt sequence.
@@ -251,6 +294,13 @@ class StructMaskedLanguageModelingDataCollator(BatchIndexedDataCollatorForTokenC
             It will select a token with id `span_sep_token` with this probability and then it will select
             all tokens between this token and the next `span_sep_token` token or the end of the sequence.
             You must set `span_sep_token` if you want to use this feature.
+        :param warmup_masked_lm_steps: Number of warmup steps for masked language modeling. It will linearly
+            increase the selection_prob from 0 to the value of selection_prob parameter.
+            You must provide `get_steps` function if you want to use this feature.
+        :param min_warmup_selection_prob: Minimum selection probability during warmup. It will linearly increase
+            the selection_prob from this value to the value of selection_prob parameter.
+        :param get_steps: Function that returns the current number of training steps. If provided then it will
+            be used to compute the current selection_prob during warmup.
         :param ignore: ignore label
         :param span_sep_token: token that will be used to separate spans
         :raises ValueError: If `span_selection_prob` is greater than 0.0 and `span_sep_token` is None.
@@ -268,6 +318,9 @@ class StructMaskedLanguageModelingDataCollator(BatchIndexedDataCollatorForTokenC
         self.random_prob = random_prob
         self.ignore = ignore
         self.span_sep_token = span_sep_token
+        self.warmup_masked_lm_steps = warmup_masked_lm_steps
+        self.min_warmup_selection_prob = min_warmup_selection_prob
+        self.get_steps = get_steps
 
         if span_selection_prob > 0.0 and span_sep_token is None:
             raise ValueError("You must set `span_sep_token` if you want to use `span_selection_prob`.")
@@ -277,9 +330,15 @@ class StructMaskedLanguageModelingDataCollator(BatchIndexedDataCollatorForTokenC
         features["indices"] = self.indices_factory.create_indices(features["batch_index"].flatten())
         del features["batch_index"]
 
+        current_selection_prob = self.selection_prob
+        if self.warmup_masked_lm_steps > 0 and self.get_steps is not None:
+            current_step = self.get_steps()
+            current_selection_prob = min(self.selection_prob,
+                                            self.min_warmup_selection_prob + (self.selection_prob - self.min_warmup_selection_prob) *
+                                            current_step / self.warmup_masked_lm_steps)
         mlm_transform(
             features=features,
-            selection_prob=self.selection_prob,
+            selection_prob=current_selection_prob,
             masking_prob=self.masking_prob,
             random_prob=self.random_prob,
             span_selection_prob=self.span_selection_prob,

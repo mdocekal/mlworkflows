@@ -68,11 +68,11 @@ class DatasetFactory(ConfigurableMixin):
             return d[split] if split else d
 
         if self.path.endswith(".json") or self.path.endswith(".jsonl"):
-            return load_dataset("json", data_files=self.path, num_proc=num_proc)
+            return load_dataset("json", data_files=self.path, num_proc=num_proc, split=split)
         elif self.path.endswith(".csv"):
-            return load_dataset("csv", data_files=self.path, num_proc=num_proc)
+            return load_dataset("csv", data_files=self.path, num_proc=num_proc, split=split)
         elif self.path.endswith(".txt"):
-            return load_dataset("text", data_files=self.path, num_proc=num_proc)
+            return load_dataset("text", data_files=self.path, num_proc=num_proc, split=split)
         else:
             return load_dataset(self.path,
                                 self.name,
