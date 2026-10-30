@@ -1,7 +1,11 @@
+
 from abc import ABC
+from importlib import import_module
 from typing import Optional
 
-from classconfig import ConfigurableMixin, ConfigurableValue, RelativePathTransformer, ConfigurableFactory
+from classconfig import ConfigurableMixin, ConfigurableValue, RelativePathTransformer, ConfigurableFactory, \
+    sub_cls_from_its_name
+from classconfig.validators import StringValidator, AnyValidator, IsNoneValidator
 from transformers import PreTrainedModel, AutoModel, PretrainedConfig, AutoConfig
 
 from mlworkflows.models.quantization import ConfigurableBitsAndBytesFactory
@@ -44,6 +48,18 @@ class HFModelFactory(ConfigurableMixin, ABC):
         user_default=False,
         voluntary=True
     )
+    force_loader: str = ConfigurableValue(
+        "If set, it forces the use of a specific model loader from transformers instead of the default one.",
+        user_default=None,
+        voluntary=True,
+        validator=AnyValidator([StringValidator(), IsNoneValidator()])
+    )
+    force_config_loader: str = ConfigurableValue(
+        "If set, it forces the use of a specific config loader from transformers instead of the default one.",
+        user_default=None,
+        voluntary=True,
+        validator=AnyValidator([StringValidator(), IsNoneValidator()])
+    )
 
     def __init__(self, **kwargs):
         """
@@ -53,6 +69,16 @@ class HFModelFactory(ConfigurableMixin, ABC):
         """
         ConfigurableMixin.__init__(self, **kwargs)
         self.was_quantized = False
+
+        self.force_loader = kwargs.get("force_loader", None)
+        if self.force_loader is not None:
+            self.force_loader = getattr(import_module("transformers"), self.force_loader)
+            self.LOADER = self.force_loader
+
+        self.force_config_loader = kwargs.get("force_config_loader", None)
+        if self.force_config_loader is not None:
+            self.force_config_loader = getattr(import_module("transformers"), self.force_config_loader)
+            self.CONFIG_LOADER = self.force_config_loader
 
     def get_model_args(self, **kwargs) -> dict:
         """

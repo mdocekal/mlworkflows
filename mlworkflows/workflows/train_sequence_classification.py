@@ -31,6 +31,11 @@ class SequenceClassificationTrainingWorkflow(BaseTrainingWorkflow):
         user_default=False,
         voluntary=True
     )
+    transform_labels: bool = ConfigurableValue(
+        desc="Whether to transform labels to label ids using the model configuration. By default, labels are expected to be already in id form.",
+        user_default=False,
+        voluntary=True
+    )
 
     def __post_init__(self):
         if self.compute_metrics is not None:
@@ -81,25 +86,34 @@ class SequenceClassificationTrainingWorkflow(BaseTrainingWorkflow):
         # check if batch or single example
         single = False
         model_inputs = []
-        if isinstance(examples[self.labels_field], str):
+        if isinstance(examples[self.labels_field], str) or isinstance(examples[self.labels_field], int):
             single = True
             model_inputs = self.jinja_input_template.render(examples)
             if len(model_inputs) == 0:
                 raise ValueError("Empty model input")
+
+            labels = examples[self.labels_field]
+            if self.transform_labels:
+                labels = self.model.config.label2id[labels]
         else:
+            labels = []
             for sample_fields in zip(*examples.values()):
-                i = self.jinja_input_template.render(dict(zip(examples.keys(), sample_fields)))
+                record = dict(zip(examples.keys(), sample_fields))
+                i = self.jinja_input_template.render(record)
                 if len(i) == 0:
                     raise ValueError("Empty model input")
                 model_inputs.append(i)
+                labels.append(record[self.labels_field])
+                if self.transform_labels:
+                    labels[-1] = self.model.config.label2id[labels[-1]]
 
         tokenized_inputs = self.tokenizer(
             model_inputs,
             truncation=self.truncation,
             return_offsets_mapping=True
         )
+        tokenized_inputs["labels"] = labels
 
-        tokenized_inputs["labels"] = examples[self.labels_field]
         if single:
             tokenized_inputs = {k: v[0] for k, v in tokenized_inputs.items()}
         return tokenized_inputs
